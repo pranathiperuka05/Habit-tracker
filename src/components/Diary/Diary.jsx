@@ -62,15 +62,18 @@ function Diary() {
 
 	const filteredDiary = useMemo(() => {
 		if (!diary) return [];
-		const filtered = diary.filter((note) =>
+		let filtered = diary.filter((note) =>
 			note.text.toLowerCase().includes(searchTerm.toLowerCase())
 		);
-		return filtered.sort((a, b) =>
-			sortOrder === 'newest'
+		if(showPinnedOnly)filtered = filtered.filter((note)=>note.Pinned);
+		return filtered.sort((a, b) =>{
+			if(b.pinned!==a.pinned)return b.pinned - a.pinned;
+		
+			return sortOrder === 'newest'
 				? new Date(b.date) - new Date(a.date)
 				: new Date(a.date) - new Date(b.date)
-		);
-	}, [diary, searchTerm, sortOrder]);
+	});
+	}, [diary, searchTerm, sortOrder ,showPinnedOnly]);
 
 	// -----------------------------
 	// Add / Edit / Delete Notes
@@ -89,16 +92,19 @@ function Diary() {
 	);
 
 	const handleAddNote = useCallback(() => {
+		if (!input.trim())return toast.error('Note is empty!');
 		const newNote = {
 			text: input,
 			date: new Date(),
 			streak: currentStreak || undefined,
+			pinned: false,
 		};
 
 		saveNote('addNote', { newNote });
 		toast.success('Note added!');
 		localStorage.removeItem('diaryDraft');
 		setInput('');
+		setIsFormActive(false);
 	}, [input, currentStreak, saveNote]);
 
 	const handleEditNote = (newText) => {
@@ -122,6 +128,10 @@ function Diary() {
 		setIsEditing(noteCreationDate);
 		setInput(text);
 		formRef.current?.focus();
+
+	};
+	const handleTogglePin = (noteCreationDate) => {
+		saveNote('togglePin',{noteCreationDate});
 	};
 
 	// -----------------------------
@@ -133,8 +143,13 @@ function Diary() {
 	const recognitionRef = useRef(null);
 
 	useEffect(() => {
+		const handler = setTimeout(() => {
+		
+		
 		if (input.trim()) localStorage.setItem('diaryDraft', input);
 		else localStorage.removeItem('diaryDraft');
+		},500);
+		return() => clearTimeout(handler);
 	}, [input]);
 
 	const handleVoiceToggle = () => {
@@ -167,6 +182,18 @@ function Diary() {
 			toast.success('Voice input stopped.');
 		}
 	};
+	useEffect(()=> {
+		const handler = (e)=>{
+			if(e.ctrlKey && e.key==='Enter'){
+				if(isEditing)handleEditNote(input);
+				else handleAddNote();
+			}
+		};
+		window.addEventListener('keydown',handler);
+		return()=> window.removeEventListener('keydown handler');
+
+	},[handleAddNote,handleEditNote,input,isEditing]);
+
 
 	// -----------------------------
 	// Render
@@ -193,6 +220,14 @@ function Diary() {
 						<option value="newest">Newest first</option>
 						<option value="oldest">Oldest first</option>
 					</select>
+					<label className={styles.pinToggle}>
+						<input
+						type = "checkbox"
+						checked={showPinnedOnly}
+						onChange={()=>setShowPinnedOnly((v)=>!v)}
+						/>
+						Show Pinned Only
+					</label>
 				</div>
 			)}
 
@@ -210,6 +245,7 @@ function Diary() {
 							diary={filteredDiary}
 							onStartEditNote={handleStartEdit}
 							onDeleteNote={handleDeleteNote}
+							onPinNote={handleTogglePin}
 						/>
 					</motion.div>
 				) : (
@@ -273,6 +309,17 @@ function Diary() {
 
 					<p className={styles.charCount}>{input.length}/500</p>
 				</div>
+			)}
+			{/* ➕ Floating Action Button*/}
+			{!isFormActive &&(
+				<button
+				className={styles.fab}
+				style={{backgroundColor:accentColor}}
+				onClick={()=>setIsFormActive(true)}
+				title="Add Note"
+				>
+					<MdStickyNote2 size = {24}/>
+				</button>
 			)}
 
 			{/* Dim overlay when active */}
