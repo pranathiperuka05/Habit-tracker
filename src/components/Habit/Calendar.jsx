@@ -31,7 +31,7 @@ function Calendar(props) {
 	const isDaySquare = monthsCount > 1;
 
 	for (let index = 0; index < visibleMonthsCount; index++) {
-		const date = new Date(startMonth.getFullYear(), startMonth.getMonth() + index, 1);
+		const date = new Date(startMonth.getFullYear(), startMonths.getMonth() + index, 1);
 
 		months.push(
 			<Month
