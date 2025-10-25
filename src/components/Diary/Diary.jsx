@@ -65,7 +65,8 @@ function Diary() {
 		let filtered = diary.filter((note) =>
 			note.text.toLowerCase().includes(searchTerm.toLowerCase())
 		);
-		if(showPinnedOnly)filtered = filtered.filter((note)=>note.Pinned);
+		const [showPinnedOnly, setShowPinnedOnly] = useState(false);
+
 		return filtered.sort((a, b) =>{
 			if(b.pinned!==a.pinned)return b.pinned - a.pinned;
 		
@@ -190,7 +191,17 @@ function Diary() {
 			}
 		};
 		window.addEventListener('keydown',handler);
-		return()=> window.removeEventListener('keydown handler');
+		useEffect(() => {
+  const handler = (e) => {
+    if (e.ctrlKey && e.key === 'Enter') {
+      if (isEditing) handleEditNote(input);
+      else handleAddNote();
+    }
+  };
+  window.addEventListener('keydown', handler);
+  return () => window.removeEventListener('keydown', handler);
+}, [handleAddNote, handleEditNote, input, isEditing]);
+
 
 	},[handleAddNote,handleEditNote,input,isEditing]);
 
@@ -221,11 +232,7 @@ function Diary() {
 						<option value="oldest">Oldest first</option>
 					</select>
 					<label className={styles.pinToggle}>
-						<input
-						type = "checkbox"
-						checked={showPinnedOnly}
-						onChange={()=>setShowPinnedOnly((v)=>!v)}
-						/>
+						if (showPinnedOnly) filtered = filtered.filter((note) => note.pinned);
 						Show Pinned Only
 					</label>
 				</div>
