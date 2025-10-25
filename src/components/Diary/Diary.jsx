@@ -59,22 +59,21 @@ function Diary() {
 	// -----------------------------
 	const [searchTerm, setSearchTerm] = useState('');
 	const [sortOrder, setSortOrder] = useState('newest');
+	const [showPinnedOnly, setShowPinnedOnly] = useState(false);
 
 	const filteredDiary = useMemo(() => {
 		if (!diary) return [];
 		let filtered = diary.filter((note) =>
 			note.text.toLowerCase().includes(searchTerm.toLowerCase())
 		);
-		const [showPinnedOnly, setShowPinnedOnly] = useState(false);
-
-		return filtered.sort((a, b) =>{
-			if(b.pinned!==a.pinned)return b.pinned - a.pinned;
-		
+		if (showPinnedOnly) filtered = filtered.filter((note) => note.pinned);
+		return filtered.sort((a, b) => {
+			if (b.pinned !== a.pinned) return b.pinned - a.pinned;
 			return sortOrder === 'newest'
 				? new Date(b.date) - new Date(a.date)
-				: new Date(a.date) - new Date(b.date)
-	});
-	}, [diary, searchTerm, sortOrder ,showPinnedOnly]);
+				: new Date(a.date) - new Date(b.date);
+		});
+	}, [diary, searchTerm, sortOrder, showPinnedOnly]);
 
 	// -----------------------------
 	// Add / Edit / Delete Notes
@@ -93,14 +92,13 @@ function Diary() {
 	);
 
 	const handleAddNote = useCallback(() => {
-		if (!input.trim())return toast.error('Note is empty!');
+		if (!input.trim()) return toast.error('Note is empty!');
 		const newNote = {
-			text: input,
+			text: input.trim(),
 			date: new Date(),
 			streak: currentStreak || undefined,
 			pinned: false,
 		};
-
 		saveNote('addNote', { newNote });
 		toast.success('Note added!');
 		localStorage.removeItem('diaryDraft');
@@ -129,10 +127,10 @@ function Diary() {
 		setIsEditing(noteCreationDate);
 		setInput(text);
 		formRef.current?.focus();
-
 	};
+
 	const handleTogglePin = (noteCreationDate) => {
-		saveNote('togglePin',{noteCreationDate});
+		saveNote('togglePin', { noteCreationDate });
 	};
 
 	// -----------------------------
@@ -145,12 +143,10 @@ function Diary() {
 
 	useEffect(() => {
 		const handler = setTimeout(() => {
-		
-		
-		if (input.trim()) localStorage.setItem('diaryDraft', input);
-		else localStorage.removeItem('diaryDraft');
-		},500);
-		return() => clearTimeout(handler);
+			if (input.trim()) localStorage.setItem('diaryDraft', input);
+			else localStorage.removeItem('diaryDraft');
+		}, 500);
+		return () => clearTimeout(handler);
 	}, [input]);
 
 	const handleVoiceToggle = () => {
@@ -183,28 +179,20 @@ function Diary() {
 			toast.success('Voice input stopped.');
 		}
 	};
-	useEffect(()=> {
-		const handler = (e)=>{
-			if(e.ctrlKey && e.key==='Enter'){
-				if(isEditing)handleEditNote(input);
+
+	// -----------------------------
+	// Keyboard Shortcut: Ctrl + Enter
+	// -----------------------------
+	useEffect(() => {
+		const handler = (e) => {
+			if (e.ctrlKey && e.key === 'Enter') {
+				if (isEditing) handleEditNote(input);
 				else handleAddNote();
 			}
 		};
-		window.addEventListener('keydown',handler);
-		useEffect(() => {
-  const handler = (e) => {
-    if (e.ctrlKey && e.key === 'Enter') {
-      if (isEditing) handleEditNote(input);
-      else handleAddNote();
-    }
-  };
-  window.addEventListener('keydown', handler);
-  return () => window.removeEventListener('keydown', handler);
-}, [handleAddNote, handleEditNote, input, isEditing]);
-
-
-	},[handleAddNote,handleEditNote,input,isEditing]);
-
+		window.addEventListener('keydown', handler);
+		return () => window.removeEventListener('keydown', handler);
+	}, [handleAddNote, handleEditNote, input, isEditing]);
 
 	// -----------------------------
 	// Render
@@ -232,7 +220,11 @@ function Diary() {
 						<option value="oldest">Oldest first</option>
 					</select>
 					<label className={styles.pinToggle}>
-						if (showPinnedOnly) filtered = filtered.filter((note) => note.pinned);
+						<input
+							type="checkbox"
+							checked={showPinnedOnly}
+							onChange={() => setShowPinnedOnly((v) => !v)}
+						/>
 						Show Pinned Only
 					</label>
 				</div>
@@ -299,9 +291,7 @@ function Diary() {
 
 					{isPreview ? (
 						<div className={styles.previewBox}>
-							<ReactMarkdown>
-								{input || '*Start typing to preview...*'}
-							</ReactMarkdown>
+							<ReactMarkdown>{input || '*Start typing to preview...*'}</ReactMarkdown>
 						</div>
 					) : (
 						<AddNoteForm
@@ -317,15 +307,16 @@ function Diary() {
 					<p className={styles.charCount}>{input.length}/500</p>
 				</div>
 			)}
-			{/* ➕ Floating Action Button*/}
-			{!isFormActive &&(
+
+			{/* ➕ Floating Action Button */}
+			{!isFormActive && (
 				<button
-				className={styles.fab}
-				style={{backgroundColor:accentColor}}
-				onClick={()=>setIsFormActive(true)}
-				title="Add Note"
+					className={styles.fab}
+					style={{ backgroundColor: accentColor }}
+					onClick={() => setIsFormActive(true)}
+					title="Add Note"
 				>
-					<MdStickyNote2 size = {24}/>
+					<MdStickyNote2 size={24} />
 				</button>
 			)}
 
