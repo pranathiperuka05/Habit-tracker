@@ -1,168 +1,285 @@
 import styles from '../../css/Diary.module.css';
 
-// react
-import { useEffect, useRef, useState } from 'react';
+// React
+import {
+	useEffect,
+	useRef,
+	useState,
+	useMemo,
+	useCallback,
+} from 'react';
 
-// router
+// Router
 import { useLocation } from 'react-router-dom';
 
-// stores
+// Stores
 import { useColorsStore } from '../../stores/colorsStore';
 import { useFirebaseHabitsStore } from '../../stores/firebaseHabitsStore';
 import { useFirebaseDiaryStore } from '../../stores/firebaseDiaryStore';
 
-// components
+// Components
 import NoteList from './NoteList';
 import Placeholder from '../Placeholder';
 import AddNoteForm from './AddNoteForm';
 
-// icons
+// Icons
+import { MdStickyNote2, MdPreview } from 'react-icons/md';
+import { FaMicrophone, FaMicrophoneSlash } from 'react-icons/fa';
 import { ReactComponent as InfoSvg } from '../../img/information.svg';
-import { MdStickyNote2 } from 'react-icons/md';
+
+// Libraries
+import { motion, AnimatePresence } from 'framer-motion';
+import toast, { Toaster } from 'react-hot-toast';
+import ReactMarkdown from 'react-markdown';
 
 function Diary() {
-
+	// -----------------------------
+	// Initialization
+	// -----------------------------
 	const location = useLocation();
 
 	const dbColors = useColorsStore((s) => s.colors);
-	
-	// Safety check: ensure colors is an array
 	const safeColors = Array.isArray(dbColors) ? dbColors : [];
 
 	const { habits, habitsDispatch } = useFirebaseHabitsStore();
 	const { mainDiary, mainDiaryDispatch } = useFirebaseDiaryStore();
 
-	const [habitTitle] = useState(location.state?.habitTitle);
-	const [accentColor] = useState(safeColors[location.state?.colorIndex] || safeColors[0]);
-
+	const habitTitle = location.state?.habitTitle;
+	const accentColor = safeColors[location.state?.colorIndex] || safeColors[0];
 	const currentStreak = location.state?.currentStreak ?? 0;
 
 	const diary = habitTitle
 		? habits.find((h) => h.title === habitTitle)?.diary
 		: mainDiary;
 
-	const hasNotes = diary && typeof diary === 'object' && diary.length;
+	const hasNotes = Array.isArray(diary) && diary.length > 0;
 
-	// create new note
-	const handleAddNote = (text) => {
+	// -----------------------------
+	// Search & Sort
+	// -----------------------------
+	const [searchTerm, setSearchTerm] = useState('');
+	const [sortOrder, setSortOrder] = useState('newest');
+
+	const filteredDiary = useMemo(() => {
+		if (!diary) return [];
+		const filtered = diary.filter((note) =>
+			note.text.toLowerCase().includes(searchTerm.toLowerCase())
+		);
+		return filtered.sort((a, b) =>
+			sortOrder === 'newest'
+				? new Date(b.date) - new Date(a.date)
+				: new Date(a.date) - new Date(b.date)
+		);
+	}, [diary, searchTerm, sortOrder]);
+
+	// -----------------------------
+	// Add / Edit / Delete Notes
+	// -----------------------------
+	const [input, setInput] = useState(localStorage.getItem('diaryDraft') || '');
+	const [isEditing, setIsEditing] = useState(null);
+	const formRef = useRef(null);
+
+	const saveNote = useCallback(
+		(actionType, payload) => {
+			const action = { type: actionType, habitTitle, ...payload };
+			if (habitTitle) habitsDispatch(action);
+			else mainDiaryDispatch(action);
+		},
+		[habitTitle, habitsDispatch, mainDiaryDispatch]
+	);
+
+	const handleAddNote = useCallback(() => {
 		const newNote = {
-			text,
+			text: input,
 			date: new Date(),
-			streak: currentStreak || undefined
+			streak: currentStreak || undefined,
 		};
 
-		const actions = {
-			type: 'addNote',
-			habitTitle: habitTitle,
-			newNote
-		};
+		saveNote('addNote', { newNote });
+		toast.success('Note added!');
+		localStorage.removeItem('diaryDraft');
+		setInput('');
+	}, [input, currentStreak, saveNote]);
 
-		if (habitTitle) {
-			habitsDispatch(actions);
-		} else {
-			mainDiaryDispatch(actions);
-		};
-
-		document.body
-			.querySelector('#modalChildrenWrapper')
-			.scrollTo({
-				top: 0,
-				behavior: 'smooth'
-			});
-
-		handleFormActivation(false);
+	const handleEditNote = (newText) => {
+		saveNote('editNote', {
+			noteCreationDate: isEditing,
+			newText,
+		});
+		setIsEditing(null);
+		toast.success('Note updated!');
+		setInput('');
 	};
 
-	// edit note
+	const handleDeleteNote = (noteCreationDate) => {
+		if (window.confirm('Delete this note?')) {
+			saveNote('deleteNote', { noteCreationDate });
+			toast('Note deleted', { icon: '🗑️' });
+		}
+	};
+
 	const handleStartEdit = (noteCreationDate, text) => {
 		setIsEditing(noteCreationDate);
 		setInput(text);
-		formRef.current.focus();
+		formRef.current?.focus();
 	};
 
-	const handleEditNote = (newText) => {
-		const actions = {
-			type: 'editNote',
-			habitTitle: habitTitle,
-			noteCreationDate: isEditing,
-			newText
-		};
-
-		if (habitTitle) {
-			habitsDispatch(actions);
-		} else {
-			mainDiaryDispatch(actions);
-		};
-
-		setIsEditing(false);
-		handleFormActivation(false);
-	};
-
-	// delete note
-	const handleDeleteNote = (noteCreationDate) => {
-		if (window.confirm('Are you sure you want to delete this note?')) {
-			const actions = {
-				type: 'deleteNote',
-				habitTitle: habitTitle,
-				noteCreationDate
-			};
-
-			if (habitTitle) {
-				habitsDispatch(actions);
-			} else {
-				mainDiaryDispatch(actions);
-			};
-		};
-	};
-
-	// form
-	const [input, setInput] = useState('');
+	// -----------------------------
+	// Form + Voice + Preview
+	// -----------------------------
 	const [isFormActive, setIsFormActive] = useState(false);
-	const [isEditing, setIsEditing] = useState(false);
-	const formRef = useRef(null);
+	const [isPreview, setIsPreview] = useState(false);
+	const [isListening, setIsListening] = useState(false);
+	const recognitionRef = useRef(null);
 
-	const handleFormActivation = (boolean) => setIsFormActive(boolean);
+	useEffect(() => {
+		if (input.trim()) localStorage.setItem('diaryDraft', input);
+		else localStorage.removeItem('diaryDraft');
+	}, [input]);
 
-	useEffect(
-		() => { if (isFormActive) formRef.current.focus(); },
-		[isFormActive]
-	);
+	const handleVoiceToggle = () => {
+		if (!('webkitSpeechRecognition' in window)) {
+			toast.error('Speech recognition not supported.');
+			return;
+		}
 
+		if (!isListening) {
+			const recognition = new window.webkitSpeechRecognition();
+			recognition.lang = 'en-US';
+			recognition.continuous = true;
+			recognition.interimResults = true;
+
+			recognition.onresult = (event) => {
+				let transcript = '';
+				for (let i = event.resultIndex; i < event.results.length; ++i) {
+					transcript += event.results[i][0].transcript;
+				}
+				setInput((prev) => prev + ' ' + transcript);
+			};
+
+			recognition.start();
+			recognitionRef.current = recognition;
+			setIsListening(true);
+			toast('🎙️ Listening...');
+		} else {
+			recognitionRef.current?.stop();
+			setIsListening(false);
+			toast.success('Voice input stopped.');
+		}
+	};
+
+	// -----------------------------
+	// Render
+	// -----------------------------
 	return (
 		<div className={styles.diary}>
-			{hasNotes ? (
-				<NoteList
-					diary={diary}
-					onStartEditNote={handleStartEdit}
-					onDeleteNote={handleDeleteNote}
-				/>
-			) : (
-				<Placeholder
-					image={<InfoSvg />}
-					title={(habitTitle ? "This habit's" : 'Main') + ' diary is empty'}
-					desc="Add your first note to start tracking your progress and thoughts."
-					textOnButton="Add First Note"
-					buttonIcon={<MdStickyNote2 />}
-					onClick={() => handleFormActivation(true)}
-					{...{ accentColor }}
-				/>
+			<Toaster position="top-center" />
+
+			{/* 🔍 Search + Sort */}
+			{hasNotes && (
+				<div className={styles.controls}>
+					<input
+						type="text"
+						placeholder="Search notes..."
+						value={searchTerm}
+						onChange={(e) => setSearchTerm(e.target.value)}
+						className={styles.searchBox}
+					/>
+					<select
+						value={sortOrder}
+						onChange={(e) => setSortOrder(e.target.value)}
+						className={styles.sortSelect}
+					>
+						<option value="newest">Newest first</option>
+						<option value="oldest">Oldest first</option>
+					</select>
+				</div>
 			)}
 
+			{/* 🗒️ Notes or Placeholder */}
+			<AnimatePresence mode="wait">
+				{hasNotes ? (
+					<motion.div
+						key="noteList"
+						initial={{ opacity: 0, y: 10 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: -10 }}
+						transition={{ duration: 0.3 }}
+					>
+						<NoteList
+							diary={filteredDiary}
+							onStartEditNote={handleStartEdit}
+							onDeleteNote={handleDeleteNote}
+						/>
+					</motion.div>
+				) : (
+					<motion.div
+						key="placeholder"
+						initial={{ opacity: 0 }}
+						animate={{ opacity: 1 }}
+						exit={{ opacity: 0 }}
+					>
+						<Placeholder
+							image={<InfoSvg />}
+							title={(habitTitle ? 'This habit’s' : 'Main') + ' diary is empty'}
+							desc="Add your first note to start tracking your thoughts."
+							textOnButton="Add First Note"
+							buttonIcon={<MdStickyNote2 />}
+							onClick={() => setIsFormActive(true)}
+							accentColor={accentColor}
+						/>
+					</motion.div>
+				)}
+			</AnimatePresence>
+
+			{/* ✏️ Add/Edit Form + Markdown Preview + Voice Input */}
 			{(hasNotes || isFormActive) && (
-				<AddNoteForm
-					ref={formRef}
-					input={input}
-					setInput={setInput}
-					onFocus={() => handleFormActivation(true)}
-					onSubmit={isEditing ? handleEditNote : handleAddNote}
-					isSendBtnVisible={isFormActive}
-				/>
+				<div className={styles.formWrapper}>
+					<div className={styles.editorBar}>
+						<button
+							onClick={() => setIsPreview((p) => !p)}
+							className={styles.previewToggle}
+							title="Toggle Markdown Preview"
+						>
+							<MdPreview size={20} />
+							{isPreview ? 'Writing' : 'Preview'}
+						</button>
+
+						<button
+							onClick={handleVoiceToggle}
+							className={`${styles.micButton} ${isListening ? styles.listening : ''}`}
+							title="Voice Input"
+						>
+							{isListening ? <FaMicrophoneSlash /> : <FaMicrophone />}
+						</button>
+					</div>
+
+					{isPreview ? (
+						<div className={styles.previewBox}>
+							<ReactMarkdown>
+								{input || '*Start typing to preview...*'}
+							</ReactMarkdown>
+						</div>
+					) : (
+						<AddNoteForm
+							ref={formRef}
+							input={input}
+							setInput={setInput}
+							onFocus={() => setIsFormActive(true)}
+							onSubmit={isEditing ? handleEditNote : handleAddNote}
+							isSendBtnVisible={isFormActive}
+						/>
+					)}
+
+					<p className={styles.charCount}>{input.length}/500</p>
+				</div>
 			)}
 
+			{/* Dim overlay when active */}
 			{isFormActive && (
 				<div
 					className={styles.overlay}
-					onClick={() => handleFormActivation(false)}
+					onClick={() => setIsFormActive(false)}
 				/>
 			)}
 		</div>
